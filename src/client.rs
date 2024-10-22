@@ -173,12 +173,12 @@ impl DuneClient {
 
     pub async fn get_latest_results<T: DeserializeOwned>(
         &self,
-        query_id: &str,
+        query_id: u32,
         offset: usize,
         limit: usize,
     ) -> Result<GetLatestResults<T>, DuneRequestError> {
         let response = self
-            ._get_query(query_id, format!("results?offset={}&limit={}", offset, limit).as_str())
+            ._get_query(&query_id.to_string(), format!("results?offset={}&limit={}", offset, limit).as_str())
             .await
             .map_err(DuneRequestError::from)?;
         DuneClient::_parse_response::<GetLatestResults<T>>(response).await
@@ -186,10 +186,10 @@ impl DuneClient {
 
     pub async fn get_latest_results_info(
         &self,
-        query_id: &str,
+        query_id: u32,
     ) -> Result<GetLatestResultsInfo, DuneRequestError> {
         let response = self
-            ._get_query(query_id, "results?limit=0")
+            ._get_query(&query_id.to_string(), "results?limit=0")
             .await
             .map_err(DuneRequestError::from)?;
 
@@ -410,9 +410,9 @@ mod tests {
     #[tokio::test]
     async fn get_latest_results_info() {
         let dune = DuneClient::from_env();
-        let info = dune.get_latest_results_info("4178630").await.unwrap();
+        let info = dune.get_latest_results_info(3238619).await.unwrap();
         println!("{:?}", info);
-        assert_eq!(info.query_id, 4178630);
+        assert_eq!(info.query_id, 3238619);
     }
 
     #[tokio::test]
@@ -428,7 +428,7 @@ mod tests {
             list_field: String,
         }
 
-        let results: GetLatestResults<ResultStruct> = dune.get_latest_results("3238619", 0, 10).await.unwrap();
+        let results: GetLatestResults<ResultStruct> = dune.get_latest_results(3238619, 0, 10).await.unwrap();
 
         assert_eq!(results.query_id, 3238619);
         assert_eq!(
