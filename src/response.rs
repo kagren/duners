@@ -121,6 +121,10 @@ pub struct ExecutionResult<T> {
     pub rows: Vec<T>,
     pub metadata: ResultMetaData,
 }
+#[derive(Deserialize, Debug)]
+pub struct ExecutionIgnoreResult {
+    pub metadata: ResultMetaData,
+}
 
 /// Returned by a successful call to `DuneClient::get_results`.
 /// Contains similar information to [GetStatusResponse](GetStatusResponse)
@@ -139,6 +143,44 @@ pub struct GetResultResponse<T> {
 }
 
 impl<T> GetResultResponse<T> {
+    /// Convenience method for fetching the "deeply" nested `rows` of the result response.
+    pub fn get_rows(self) -> Vec<T> {
+        self.result.rows
+    }
+}
+
+#[derive(Deserialize, Debug)]
+pub struct GetLatestResultsInfo {
+
+    pub execution_id: String,
+    pub query_id: u32,
+    pub is_execution_finished: bool,
+    pub state: ExecutionStatus,
+    // TODO - this `flatten` isn't what I had hoped for.
+    //  I want the `times` field to disappear
+    //  and all sub-fields to be brought up to this layer.
+    #[serde(flatten)]
+    pub times: ExecutionTimes,
+    pub result: ExecutionIgnoreResult,
+}
+
+
+#[derive(Deserialize, Debug)]
+pub struct GetLatestResults<T> {
+
+    pub execution_id: String,
+    pub query_id: u32,
+    pub is_execution_finished: bool,
+    pub state: ExecutionStatus,
+    // TODO - this `flatten` isn't what I had hoped for.
+    //  I want the `times` field to disappear
+    //  and all sub-fields to be brought up to this layer.
+    #[serde(flatten)]
+    pub times: ExecutionTimes,
+    pub result: ExecutionResult<T>,
+}
+
+impl<T> GetLatestResults<T> {
     /// Convenience method for fetching the "deeply" nested `rows` of the result response.
     pub fn get_rows(self) -> Vec<T> {
         self.result.rows
@@ -304,4 +346,5 @@ mod tests {
             }",
         );
     }
+
 }

@@ -1,7 +1,7 @@
 use crate::error::{DuneError, DuneRequestError};
 use crate::parameters::Parameter;
 use crate::response::{
-    CancellationResponse, ExecutionResponse, ExecutionStatus, GetResultResponse, GetStatusResponse,
+    CancellationResponse, ExecutionResponse, ExecutionStatus, GetLatestResults, GetLatestResultsInfo, GetResultResponse, GetStatusResponse
 };
 use dotenv::dotenv;
 use log::{debug, error, info, warn};
@@ -67,8 +67,20 @@ impl DuneClient {
     }
 
     /// Internal GET request handler
-    async fn _get(&self, job_id: &str, command: &str) -> Result<Response, Error> {
+    async fn _get_job(&self, job_id: &str, command: &str) -> Result<Response, Error> {
         let request_url = format!("{BASE_URL}/execution/{job_id}/{command}");
+        debug!("GET from {}", &request_url);
+        let client = reqwest::Client::new();
+        client
+            .get(&request_url)
+            .header("x-dune-api-key", &self.api_key)
+            .send()
+            .await
+    }
+
+    /// Internal GET request handler
+    async fn _get_query(&self, query_id: &str, command: &str) -> Result<Response, Error> {
+        let request_url = format!("{BASE_URL}/query/{query_id}/{command}");
         debug!("GET from {}", &request_url);
         let client = reqwest::Client::new();
         client
@@ -82,6 +94,22 @@ impl DuneClient {
     /// Some "invalid" requests return response JSON, which are parsed and returned as Errors.
     async fn _parse_response<T: DeserializeOwned>(resp: Response) -> Result<T, DuneRequestError> {
         if resp.status().is_success() {
+            
+            /*
+            let text = resp.text()
+                .await
+                .map_err(DuneRequestError::from)?;
+
+            println!("{}", text);
+            
+            let res: T = serde_json::from_str(&text)
+            .map_err(|err| DuneRequestError::from(DuneError {
+                error: format!("Invalid JSON {:?}", err),
+            }))?;
+
+            Ok(res)
+            */
+            
             resp.json::<T>().await.map_err(DuneRequestError::from)
         } else {
             let err = resp
@@ -124,7 +152,7 @@ impl DuneClient {
     /// cf. [https://dune.com/docs/api/api-reference/get-results/execution-status/](https://dune.com/docs/api/api-reference/get-results/execution-status/)
     pub async fn get_status(&self, job_id: &str) -> Result<GetStatusResponse, DuneRequestError> {
         let response = self
-            ._get(job_id, "status")
+            ._get_job(job_id, "status")
             .await
             .map_err(DuneRequestError::from)?;
         DuneClient::_parse_response::<GetStatusResponse>(response).await
@@ -137,11 +165,38 @@ impl DuneClient {
         job_id: &str,
     ) -> Result<GetResultResponse<T>, DuneRequestError> {
         let response = self
-            ._get(job_id, "results")
+            ._get_job(job_id, "results")
             .await
             .map_err(DuneRequestError::from)?;
         DuneClient::_parse_response::<GetResultResponse<T>>(response).await
     }
+
+    pub async fn get_latest_results<T: DeserializeOwned>(
+        &self,
+        query_id: &str,
+        offset: usize,
+        limit: usize,
+    ) -> Result<GetLatestResults<T>, DuneRequestError> {
+        let response = self
+            ._get_query(query_id, format!("results?offset={}&limit={}", offset, limit).as_str())
+            .await
+            .map_err(DuneRequestError::from)?;
+        DuneClient::_parse_response::<GetLatestResults<T>>(response).await
+    }
+
+    pub async fn get_latest_results_info(
+        &self,
+        query_id: &str,
+    ) -> Result<GetLatestResultsInfo, DuneRequestError> {
+        let response = self
+            ._get_query(query_id, "results?limit=0")
+            .await
+            .map_err(DuneRequestError::from)?;
+
+        DuneClient::_parse_response::<GetLatestResultsInfo>(response).await
+    }
+
+
 
     /// Convenience method for users to
     /// 1. execute,
@@ -350,5 +405,40 @@ mod tests {
             .unwrap();
         println!("Job ID {:?}", results.execution_id);
         assert_eq!(results.state, ExecutionStatus::Complete);
+    }
+
+    #[tokio::test]
+    async fn get_latest_results_info() {
+        let dune = DuneClient::from_env();
+        let info = dune.get_latest_results_info("4178630").await.unwrap();
+        println!("{:?}", info);
+        assert_eq!(info.query_id, 4178630);
+    }
+
+    #[tokio::test]
+    async fn get_latest_results() {
+        let dune = DuneClient::from_env();
+
+        #[derive(Deserialize, Debug, PartialEq)]
+        struct ResultStruct {
+            text_field: String,
+            #[serde(deserialize_with = "f64_from_str")]
+            number_field: f64,
+            date_field: String,
+            list_field: String,
+        }
+
+        let results: GetLatestResults<ResultStruct> = dune.get_latest_results("3238619", 0, 10).await.unwrap();
+
+        assert_eq!(results.query_id, 3238619);
+        assert_eq!(
+            ResultStruct {
+                text_field: "Plain Text".to_string(),
+                number_field: std::f64::consts::PI,
+                date_field: "2022-05-04 00:00:00".to_string(),
+                list_field: "Option 1".to_string(),
+            },
+            results.get_rows()[0]
+        )
     }
 }
